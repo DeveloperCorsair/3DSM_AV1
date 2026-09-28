@@ -1,6 +1,6 @@
 # CineBridge — Microsserviço de Recomendação e Orquestração de Equipes
 
-Implementação da atividade prática ATVI (Prof. Dr. Eng. Gerson Penha): microsserviço
+Implementação da atividade ATVI: microsserviço
 que recebe um projeto audiovisual, analisa profissionais cadastrados e monta,
 de forma automática, uma equipe recomendada — aplicando conscientemente os
 padrões de projeto **Strategy**, **Template Method**, **Observer** e **Visitor**.
@@ -9,11 +9,10 @@ padrões de projeto **Strategy**, **Template Method**, **Observer** e **Visitor*
 
 - **Node.js** (LTS) + **TypeScript em modo estrito** (`strict: true`)
 - **Fastify** para a camada HTTP
-- Persistência via interface `RepositorioProfissionais` (implementação em
-  memória incluída; ponto de extensão para PostgreSQL + TypeORM/Prisma)
+- Persistência via interface `RepositorioProfissionais`
 - Comunicação interna via `EventEmitter` nativo, abstraída atrás da interface
-  `Barramento` (troca futura por RabbitMQ sem alterar a lógica de negócio)
-- **Vitest** para testes unitários e de integração, com cobertura via `v8`
+  `Barramento`
+- **Vitest** para testes unitários e de integração
 
 ## Estrutura de pastas
 
@@ -80,28 +79,13 @@ Content-Type: application/json
 
 Retorna a equipe recomendada (`itens`), o resultado da validação de
 consistência (Visitor) e um relatório com compatibilidade e margem
-orçamentária (Visitor). `GET /saude` expõe um healthcheck simples.
-
+orçamentária (Visitor).
 ## Testes e cobertura
 
 ```bash
 npm test              # roda toda a suíte (29 testes)
 npm run test:coverage # roda com relatório de cobertura (v8)
 ```
-
-Cobertura atual: **~96% de linhas/statements** (meta do curso: >80%),
-incluindo:
-
-- Prova de que trocar a `Strategy` altera o profissional recomendado
-  em primeiro lugar para o mesmo cenário.
-- Prova de que o `Template Method` sempre executa `validarRestricoes`
-  antes de `normalizarEntrada` (ordem imutável), mesmo com subclasses
-  diferentes.
-- Prova de que cada `Observer` reage de forma independente ao mesmo
-  evento, e que `Convite` aceito/recusado dispara notificações distintas.
-- Prova de que os três `Visitor`s operam sobre a mesma estrutura de
-  dados sem se interferir e sem exigir métodos extras nas entidades.
-- Teste de integração do endpoint REST (sucesso e casos de erro 400).
 
 ## Requisitos não funcionais atendidos
 
