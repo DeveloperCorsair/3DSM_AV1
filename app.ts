@@ -1,0 +1,155 @@
+import {
+  Profissional,
+  VetorCompetencia,
+  Avaliacao,
+  NomePapel,
+} from "../domain/entities";
+import {
+  RepositorioProfissionaisEmMemoria,
+  RepositorioProfissionaisTolerranteAFalhas,
+} from "../repository/professional-repository";
+import { BarramentoEmMemoria } from "../events/event-bus";
+import {
+  SujeitoRecomendacao,
+  ObservadorEmail,
+  ObservadorMensagemInterna,
+  ObservadorAuditoria,
+} from "../observers/notification-observer";
+import { ServicoRecomendacaoEquipe } from "./recommendation-service";
+
+/**
+ * Injecao de dependencias explicita (sem framework de DI), conforme
+ * exigido pela atividade. Este e o unico ponto do sistema onde as
+ * implementacoes concretas sao conectadas as interfaces/abstracoes.
+ */
+export interface Dependencias {
+  servico: ServicoRecomendacaoEquipe;
+  observadorEmail: ObservadorEmail;
+  observadorMensagemInterna: ObservadorMensagemInterna;
+  observadorAuditoria: ObservadorAuditoria;
+  repositorioProfissionaisSeed: RepositorioProfissionaisEmMemoria;
+}
+
+function criarProfissionalExemplo(
+  id: string,
+  nome: string,
+  especialidades: NomePapel[],
+  precoMinimo: number,
+  precoMaximo: number,
+  notaMedia: number,
+  competenciaPorPapel: Partial<Record<NomePapel, number>>
+): Profissional {
+  const historico =
+    notaMedia > 0
+      ? [new Avaliacao("projeto-seed", notaMedia), new Avaliacao("projeto-seed-2", notaMedia)]
+      : [];
+
+  return new Profissional(
+    id,
+    nome,
+    especialidades,
+    { minimo: precoMinimo, maximo: precoMaximo },
+    [{ inicio: new Date("2026-01-01"), fim: new Date("2027-12-31") }],
+    { cidade: "Sao Paulo", estado: "SP", pais: "Brasil" },
+    new VetorCompetencia(new Map(Object.entries(competenciaPorPapel) as [NomePapel, number][])),
+    historico
+  );
+}
+
+/** Cria o container de dependencias com dados de exemplo para desenvolvimento local. */
+export function construirDependencias(): Dependencias {
+  const repositorioProfissionaisSeed = new RepositorioProfissionaisEmMemoria([
+    criarProfissionalExemplo(
+      "prof-1",
+      "Ana Ribeiro",
+      ["diretor"],
+      8000,
+      15000,
+      4.5,
+      { diretor: 0.9 }
+    ),
+    criarProfissionalExemplo(
+      "prof-2",
+      "Bruno Alves",
+      ["diretor_fotografia"],
+      6000,
+      12000,
+      4.2,
+      { diretor_fotografia: 0.85 }
+    ),
+    criarProfissionalExemplo(
+      "prof-3",
+      "Camila Souza",
+      ["sonoplasta"],
+      3000,
+      6000,
+      4.0,
+      { sonoplasta: 0.8 }
+    ),
+    criarProfissionalExemplo(
+      "prof-4",
+      "Daniel Nogueira",
+      ["editor"],
+      4000,
+      8000,
+      3.8,
+      { editor: 0.75 }
+    ),
+    criarProfissionalExemplo(
+      "prof-5",
+      "Elisa Martins",
+      ["roteirista"],
+      5000,
+      9000,
+      4.7,
+      { roteirista: 0.92 }
+    ),
+    criarProfissionalExemplo(
+      "prof-6",
+      "Fabio Teixeira",
+      ["efeitos_visuais"],
+      7000,
+      14000,
+      4.1,
+      { efeitos_visuais: 0.82 }
+    ),
+    criarProfissionalExemplo(
+      "prof-7",
+      "Gabriela Lima",
+      ["diretor", "roteirista"],
+      3000,
+      6000,
+      3.5,
+      { diretor: 0.6, roteirista: 0.65 }
+    ),
+  ]);
+
+  const repositorioTolerante = new RepositorioProfissionaisTolerranteAFalhas(
+    repositorioProfissionaisSeed,
+    (erro) => console.error("Falha no repositorio de profissionais:", erro)
+  );
+
+  const barramento = new BarramentoEmMemoria();
+
+  const sujeitoRecomendacao = new SujeitoRecomendacao();
+  const observadorEmail = new ObservadorEmail();
+  const observadorMensagemInterna = new ObservadorMensagemInterna();
+  const observadorAuditoria = new ObservadorAuditoria();
+  sujeitoRecomendacao.inscrever(observadorEmail);
+  sujeitoRecomendacao.inscrever(observadorMensagemInterna);
+  sujeitoRecomendacao.inscrever(observadorAuditoria);
+
+  const servico = new ServicoRecomendacaoEquipe(
+    repositorioTolerante,
+    sujeitoRecomendacao,
+    barramento
+  );
+
+  return {
+    servico,
+    observadorEmail,
+    observadorMensagemInterna,
+    observadorAuditoria,
+    repositorioProfissionaisSeed,
+  };
+}

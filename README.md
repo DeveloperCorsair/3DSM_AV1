@@ -1,0 +1,124 @@
+# CineBridge — Microsserviço de Recomendação e Orquestração de Equipes
+
+Implementação da atividade prática ATVI (Prof. Dr. Eng. Gerson Penha): microsserviço
+que recebe um projeto audiovisual, analisa profissionais cadastrados e monta,
+de forma automática, uma equipe recomendada — aplicando conscientemente os
+padrões de projeto **Strategy**, **Template Method**, **Observer** e **Visitor**.
+
+## Stack técnica
+
+- **Node.js** (LTS) + **TypeScript em modo estrito** (`strict: true`)
+- **Fastify** para a camada HTTP
+- Persistência via interface `RepositorioProfissionais` (implementação em
+  memória incluída; ponto de extensão para PostgreSQL + TypeORM/Prisma)
+- Comunicação interna via `EventEmitter` nativo, abstraída atrás da interface
+  `Barramento` (troca futura por RabbitMQ sem alterar a lógica de negócio)
+- **Vitest** para testes unitários e de integração, com cobertura via `v8`
+
+## Estrutura de pastas
+
+```
+src/
+  domain/          Entidades: Projeto, Profissional, Competencia, Avaliacao,
+                    Recomendacao, Convite (a "árvore de dados" visitada)
+  strategies/       [Strategy] 3 algoritmos de recomendação + fábrica
+  orchestrator/     [Template Method] fluxo fixo de composição de equipe
+  observers/        [Observer] notificações (e-mail, mensagens, auditoria)
+  visitors/         [Visitor] validação, compatibilidade, relatório
+  repository/       Repositório de profissionais + decorator tolerante a falhas
+  events/           Barramento de eventos de domínio (in-memory → filas)
+  server/           Serviço de aplicação, injeção de dependências, app Fastify
+tests/
+  unit/             Um arquivo de teste por padrão + serviço + repositório
+  integration/       Teste do endpoint REST via app.inject (Fastify)
+diagrama-classes.puml   Diagrama de classes (PlantUML) dos 4 padrões
+```
+
+## Os quatro padrões, na prática
+
+| Padrão | Onde | O que resolve |
+|---|---|---|
+| **Strategy** | `strategies/recommendation-strategy.ts` | Três algoritmos de recomendação intercambiáveis (similaridade de cosseno, filtragem colaborativa, regras para orçamento reduzido), escolhidos dinamicamente por nome. |
+| **Template Method** | `orchestrator/team-composition-orchestrator.ts` | `compor()` fixa a ordem `validar → normalizar → recomendar (via Strategy) → pós-processar`; subclasses (`OrquestradorPadrao`, `OrquestradorComDiversidade`) só customizam os *hooks*. |
+| **Observer** | `observers/notification-observer.ts` | `SujeitoRecomendacao` notifica, de forma desacoplada, e-mail / mensagens internas / auditoria a cada recomendação gerada ou convite atualizado. |
+| **Visitor** | `visitors/recommendation-visitor.ts` | Três operações transversais (validação de consistência, cálculo de compatibilidade, relatório) sobre `Projeto`/`Recomendação`, sem poluir as classes de domínio. |
+
+Os quatro padrões colaboram na fachada `server/recommendation-service.ts`
+(`ServicoRecomendacaoEquipe`), que também publica os eventos de domínio no
+`Barramento` para os microsserviços de gerenciamento de projetos e financeiro.
+
+## Como rodar
+
+```bash
+npm install
+npm run build      # compila para dist/
+npm start          # sobe o Fastify em http://localhost:3000
+# ou, em desenvolvimento com reload:
+npm run dev
+```
+
+### Endpoint principal
+
+```
+POST /projetos/recomendacoes
+Content-Type: application/json
+
+{
+  "genero": "documentario",
+  "duracaoEstimadaMinutos": 90,
+  "orcamentoTotal": 60000,
+  "dataEntrega": "2027-05-01T00:00:00.000Z",
+  "tipoCaptacao": "documentario",
+  "localizacao": { "cidade": "Sao Paulo", "estado": "SP", "pais": "Brasil" },
+  "papeisRequeridos": [
+    { "nome": "diretor", "peso": 1 },
+    { "nome": "editor", "peso": 0.5 }
+  ],
+  "estrategia": "similaridade_cosseno"
+}
+```
+
+Retorna a equipe recomendada (`itens`), o resultado da validação de
+consistência (Visitor) e um relatório com compatibilidade e margem
+orçamentária (Visitor). `GET /saude` expõe um healthcheck simples.
+
+## Testes e cobertura
+
+```bash
+npm test              # roda toda a suíte (29 testes)
+npm run test:coverage # roda com relatório de cobertura (v8)
+```
+
+Cobertura atual: **~96% de linhas/statements** (meta do curso: >80%),
+incluindo:
+
+- Prova de que trocar a `Strategy` altera o profissional recomendado
+  em primeiro lugar para o mesmo cenário.
+- Prova de que o `Template Method` sempre executa `validarRestricoes`
+  antes de `normalizarEntrada` (ordem imutável), mesmo com subclasses
+  diferentes.
+- Prova de que cada `Observer` reage de forma independente ao mesmo
+  evento, e que `Convite` aceito/recusado dispara notificações distintas.
+- Prova de que os três `Visitor`s operam sobre a mesma estrutura de
+  dados sem se interferir e sem exigir métodos extras nas entidades.
+- Teste de integração do endpoint REST (sucesso e casos de erro 400).
+
+## Requisitos não funcionais atendidos
+
+- **Tolerância a falhas**: `RepositorioProfissionaisTolerranteAFalhas`
+  decora o repositório real e retorna fallback (lista vazia /
+  `undefined`) em vez de propagar exceções.
+- **Auditoria**: `ObservadorAuditoria` registra toda ação relevante
+  (recomendação gerada, convite atualizado) com timestamp.
+- **Baixa acoplagem para escala futura**: comunicação interna via
+  `Barramento` (hoje `EventEmitter`, migrável para fila de mensagens
+  sem alterar a lógica de negócio).
+- **Injeção de dependências explícita**: veja `server/composition-root.ts`
+  — único ponto do sistema que conecta implementações concretas às
+  abstrações (sem framework de DI).
+
+## Compatibilidade de plataforma
+
+Testado para rodar em Windows 10+ e Linux Ubuntu 24.04+ (e derivados),
+por depender apenas do runtime Node.js (LTS) e de pacotes npm
+multiplataforma (Fastify, TypeScript, Vitest).
